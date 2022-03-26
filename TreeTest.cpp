@@ -1,30 +1,34 @@
 #include "TestedTreeType.h"
 
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <random>
 
 namespace {
-std::string get_double_insert_error_message(int value)
+
+std::string double_insert_error_message(int value)
 {
-    std::stringstream oss;
-    oss << "inserting an already contained value, the return value must be false;"
-        << "invalid insert for value = " << value;
-    return oss.str();
+    return "inserting an already contained value, the return value must be false;\n"
+           "invalid insert for value " + std::to_string(value);
 }
 
-std::string get_double_remove_error_message(int value)
+std::string double_remove_error_message(int value)
 {
-    std::stringstream oss;
-    oss << "inserting not contained value, the return value must be false;"
-        << "invalid remove for value = " << value;
-    return oss.str();
+    return "inserting not contained value, the return value must be false;\n"
+           "invalid remove for value " + std::to_string(value);
+}
+
+std::mt19937 & get_random_generator()
+{
+    // Default seed (5489u) so that tests are deterministic
+    static std::mt19937 random; // NOLINT
+    return random;
 }
 
 int get_random_number()
 {
-    static std::mt19937 random(std::random_device{}());
-    static std::uniform_real_distribution distribution;
-    return static_cast<int>(2 * 1e9 * distribution(random));
+    std::uniform_int_distribution<int> dist(-1e6, 1e6);
+    return dist(get_random_generator());
 }
 
 } // namespace
@@ -32,195 +36,219 @@ int get_random_number()
 /**
  * General tests
  */
-class TreeTest : public ::testing::Test
-{
-};
 
-TEST_F(TreeTest, contains_in_empty)
+TEST(TreeTest, empty)
 {
-    Tree tree;
-    ASSERT_FALSE(tree.contains(1));
+    const Tree tree{};
+
+    EXPECT_TRUE(tree.empty());
+    EXPECT_EQ(tree.size(), 0);
+    EXPECT_FALSE(tree.contains(1));
+    EXPECT_EQ(tree.values(), std::vector<int>{});
 }
 
-TEST_F(TreeTest, insert)
+TEST(TreeTest, insert)
 {
     Tree tree;
-    ASSERT_TRUE(tree.insert(1));
-    ASSERT_TRUE(tree.contains(1));
+
+    EXPECT_TRUE(tree.insert(1));
+
+    EXPECT_TRUE(tree.contains(1));
+    EXPECT_FALSE(tree.contains(0));
+    EXPECT_FALSE(tree.contains(2));
+
+    EXPECT_FALSE(tree.empty());
+    EXPECT_EQ(tree.size(), 1);
 }
 
-TEST_F(TreeTest, multiple_insert)
+TEST(TreeTest, multiple_insert)
 {
     Tree tree;
     int value = 1;
 
     ASSERT_TRUE(tree.insert(value));
-    ASSERT_TRUE(tree.contains(value));
 
-    ASSERT_FALSE(tree.insert(value)) << get_double_insert_error_message(value);
-    ASSERT_TRUE(tree.contains(value));
-
-    ASSERT_FALSE(tree.insert(value)) << get_double_insert_error_message(value);
+    for (std::size_t i = 0; i < 5; ++i) {
+        ASSERT_FALSE(tree.insert(value)) << double_insert_error_message(value);
+        ASSERT_TRUE(tree.contains(value));
+        ASSERT_EQ(tree.size(), 1);
+    }
 }
 
-TEST_F(TreeTest, insert_and_check_order)
+TEST(TreeTest, insert_and_check_order)
+{
+    std::vector<int> values(10);
+    std::iota(values.begin(), values.end(), 1);
+
+    std::vector<int> shuffled_values(values.begin(), values.end());
+    std::shuffle(shuffled_values.begin(), shuffled_values.end(), get_random_generator());
+
+    Tree tree;
+
+    for (int value : shuffled_values) {
+        ASSERT_TRUE(tree.insert(value));
+    }
+
+    for (int value : shuffled_values) {
+        ASSERT_FALSE(tree.insert(value)) << double_insert_error_message(value);
+    }
+
+    for (int value : shuffled_values) {
+        ASSERT_TRUE(tree.contains(value));
+    }
+
+    ASSERT_EQ(tree.size(), values.size());
+    ASSERT_EQ(tree.values(), values);
+}
+
+TEST(TreeTest, remove)
 {
     Tree tree;
-    std::vector<int> values = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    std::random_shuffle(values.begin(), values.end());
 
-    for (auto value : values) {
+    EXPECT_TRUE(tree.insert(1));
+
+    EXPECT_TRUE(tree.remove(1));
+
+    EXPECT_FALSE(tree.contains(1));
+    EXPECT_TRUE(tree.empty());
+    EXPECT_EQ(tree.size(), 0);
+}
+
+TEST(TreeTest, remove_from_empty_tree)
+{
+    Tree tree;
+
+    EXPECT_FALSE(tree.remove(1));
+    EXPECT_TRUE(tree.empty());
+    EXPECT_EQ(tree.size(), 0);
+}
+
+TEST(TreeTest, multiple_remove)
+{
+    Tree tree;
+    int value = 1;
+
+    ASSERT_TRUE(tree.insert(value));
+    ASSERT_TRUE(tree.remove(value));
+
+    for (std::size_t i = 0; i < 5; ++i) {
+        ASSERT_FALSE(tree.remove(value)) << double_remove_error_message(value);
+        ASSERT_FALSE(tree.contains(value));
+        ASSERT_TRUE(tree.empty());
+        ASSERT_EQ(tree.size(), 0);
+    }
+}
+
+TEST(TreeTest, remove_and_check_order)
+{
+    std::vector<int> values(10);
+    std::iota(values.begin(), values.end(), 1);
+
+    std::shuffle(values.begin(), values.end(), get_random_generator());
+
+    Tree tree;
+
+    for (int value : values) {
         ASSERT_TRUE(tree.insert(value));
-        ASSERT_FALSE(tree.insert(value))
-                << get_double_insert_error_message(value);
     }
 
-    for (auto value : values) {
-        ASSERT_TRUE(tree.contains(value))
-                << "tree not contains " << value;
+    std::shuffle(values.begin(), values.end(), get_random_generator());
+    auto middle_it = values.begin() + values.size() / 2;
+
+    for (auto it = middle_it; it != values.end(); ++it) {
+        ASSERT_TRUE(tree.remove(*it));
     }
 
+    for (auto it = middle_it; it != values.end(); ++it) {
+        ASSERT_FALSE(tree.remove(*it)) << double_remove_error_message(*it);
+    }
+
+    for (auto it = values.begin(); it != values.end(); ++it) {
+        ASSERT_EQ(tree.contains(*it), it < middle_it);
+    }
+
+    values.erase(middle_it, values.end());
     std::sort(values.begin(), values.end());
 
-    ASSERT_EQ(values, tree.values());
-}
-
-TEST_F(TreeTest, remove)
-{
-    Tree tree;
-
-    ASSERT_TRUE(tree.insert(1));
-    ASSERT_TRUE(tree.contains(1));
-
-    ASSERT_TRUE(tree.remove(1));
-    ASSERT_FALSE(tree.contains(1));
-}
-
-TEST_F(TreeTest, remove_from_empty_tree)
-{
-    Tree tree;
-    ASSERT_FALSE(tree.remove(1));
-}
-
-TEST_F(TreeTest, multiple_remove)
-{
-    Tree tree;
-    int value = 1;
-
-    ASSERT_TRUE(tree.insert(value));
-
-    ASSERT_TRUE(tree.remove(value));
-    ASSERT_FALSE(tree.remove(value))
-            << get_double_remove_error_message(1);
-}
-
-TEST_F(TreeTest, remove_and_check_order)
-{
-    Tree tree;
-    std::vector<int> values = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    std::random_shuffle(values.begin(), values.end());
-
-    for (auto value : values) {
-        ASSERT_TRUE(tree.insert(value));
-    }
-
-    std::random_shuffle(values.begin(), values.end());
-
-    std::vector<int> values_to_removing;
-    for (std::size_t i = 0; i < values.size() / 2; ++i) {
-        values_to_removing.push_back(values[i]);
-    }
-
-    std::vector<int> remaining_values;
-    for (std::size_t i = values.size() / 2; i < values.size(); ++i) {
-        remaining_values.push_back(values[i]);
-    }
-    std::sort(remaining_values.begin(), remaining_values.end());
-
-    for (auto value : values_to_removing) {
-        ASSERT_TRUE(tree.remove(value))
-                << "Value = " << value;
-        ASSERT_FALSE(tree.remove(value))
-                << get_double_remove_error_message(value);
-    }
-
-    ASSERT_EQ(tree.size(), values.size() - values.size() / 2);
-
-    for (auto value : values_to_removing) {
-        ASSERT_FALSE(tree.contains(value))
-                << "Value = " << value;
-    }
-
-    for (auto value : remaining_values) {
-        ASSERT_TRUE(tree.contains(value))
-                << "Value = " << value;
-    }
-
-    ASSERT_EQ(remaining_values, tree.values());
+    ASSERT_EQ(tree.size(), values.size());
+    ASSERT_EQ(tree.values(), values);
 }
 
 /**
  * Performance testing on large input data
  */
-class PerformanceTest : public ::testing::TestWithParam<int>
+class PerformanceTest : public ::testing::TestWithParam<std::size_t>
 {
+protected:
+    void insert_and_remove_random(double insert_likelihood)
+    {
+        Tree tree;
+        std::set<int> set;
+
+        std::size_t number_of_values = GetParam();
+        std::bernoulli_distribution op_dist(insert_likelihood);
+
+        for (std::size_t i = 0; i < number_of_values; ++i) {
+            int value = get_random_number();
+            if (op_dist(get_random_generator())) {
+                ASSERT_EQ(tree.insert(value), set.insert(value).second);
+            }
+            else {
+                ASSERT_EQ(tree.remove(value), set.erase(value) == 1);
+            }
+            ASSERT_EQ(tree.size(), set.size());
+        }
+
+        for (const int value : set) {
+            ASSERT_TRUE(tree.contains(value));
+        }
+
+        for (std::size_t i = 0; i < number_of_values; ++i) {
+            int value = get_random_number();
+            ASSERT_EQ(tree.contains(value), set.find(value) != set.end());
+        }
+
+        ASSERT_EQ(tree.values(), std::vector(set.begin(), set.end()));
+    }
 };
 
-TEST_P(PerformanceTest, insertion_in_ascending_order)
+TEST_P(PerformanceTest, insert_ascending_order)
 {
     Tree tree;
-    int count_of_values = GetParam();
-    for (int i = 0; i < count_of_values; ++i) {
-        ASSERT_TRUE(tree.insert(i));
-    }
-}
+    std::set<int> set;
 
-TEST_P(PerformanceTest, insertion_random_values)
-{
-    int count_of_values = GetParam();
-    std::set<int> values;
-    for (int i = 0; i < 2 * count_of_values; ++i) {
-        values.insert(::get_random_number());
+    std::size_t number_of_values = GetParam();
+
+    for (std::size_t i = 0; i < number_of_values; ++i) {
+        ASSERT_EQ(tree.insert(i), set.insert(i).second);
+        ASSERT_EQ(tree.size(), set.size());
     }
 
-    Tree tree;
-    std::for_each(values.cbegin(), values.cend(), [&tree](int value) {
-        ASSERT_TRUE(tree.insert(value));
-    });
-
-    std::for_each(values.cbegin(), values.cend(), [&tree](int value) {
-        ASSERT_TRUE(tree.contains(value)) << "Value = " << value;
-    });
-
-    ASSERT_EQ(tree.size(), values.size());
-}
-
-TEST_P(PerformanceTest, insertion_and_removing_random_values)
-{
-    int count_of_values = GetParam();
-    std::set<int> values;
-    for (int i = 0; i < 2 * count_of_values; ++i) {
-        values.insert(::get_random_number());
-    }
-
-    Tree tree;
-    std::for_each(values.cbegin(), values.cend(), [&tree](int value) {
-        ASSERT_TRUE(tree.insert(value));
-    });
-
-    std::for_each(values.cbegin(), values.cend(), [&tree](int value) {
+    for (const int value : set) {
         ASSERT_TRUE(tree.contains(value));
-    });
+    }
 
-    ASSERT_EQ(tree.size(), values.size());
+    for (std::size_t i = 0; i < number_of_values; ++i) {
+        int value = get_random_number();
+        ASSERT_EQ(tree.contains(value), set.find(value) != set.end());
+    }
 
-    std::for_each(values.cbegin(), values.cend(), [&tree](int value) {
-        ASSERT_TRUE(tree.remove(value));
-    });
-
-    ASSERT_TRUE(tree.empty());
+    ASSERT_EQ(tree.values(), std::vector(set.begin(), set.end()));
 }
 
-INSTANTIATE_TEST_SUITE_P(TreeTest,
-                         PerformanceTest,
-                         ::testing::Values(1e3, 1e4, 2 * 1e5));
+TEST_P(PerformanceTest, insert_random)
+{
+    insert_and_remove_random(1);
+}
+
+TEST_P(PerformanceTest, insert_and_remove_random_balanced)
+{
+    insert_and_remove_random(.5);
+}
+
+TEST_P(PerformanceTest, insert_and_remove_random_unbalanced)
+{
+    insert_and_remove_random(.9);
+}
+
+INSTANTIATE_TEST_SUITE_P(TreeTest, PerformanceTest, ::testing::Values(1e3, 1e4, 2e5));
